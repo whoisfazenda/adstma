@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ad Rewards Mini App with AdsGram</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://unpkg.com/@tonconnect/sdk@latest/dist/tonconnect-sdk.min.js"></script>
+    <!-- Подключение AdsGram SDK -->
+    <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f0f2f5;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .tab {
+            padding: 10px;
+            background: white;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button {
+            padding: 10px 20px;
+            background: #0088cc;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0077b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="tab">
+            <h2>Заработок очков</h2>
+            <p>Ваши очки: <span id="points">0</span></p>
+            <button onclick="watchAd()">Смотреть рекламу (10 очков)</button>
+        </div>
+
+        <div class="tab">
+            <h2>Кошелек</h2>
+            <p>Баланс TON: <span id="tonBalance">0</span></p>
+            <button onclick="connectWallet()" id="connectBtn">Подключить кошелек</button>
+            <button onclick="exchangePoints()" id="exchangeBtn" disabled>Обменять очки на TON</button>
+            <button onclick="withdrawTON()" id="withdrawBtn" disabled>Вывести TON</button>
+        </div>
+    </div>
+
+    <script>
+        // Инициализация TON Connect
+        const tonConnect = new TonConnectSDK.TonConnect({
+            manifestUrl: 'https://your-domain.com/tonconnect-manifest.json'
+        });
+
+        // Инициализация AdsGram (замените 'your-block-id' на ваш blockId)
+        const AdController = window.Adsgram.init({ blockId: 'your-block-id' });
+
+        let points = 0;
+        let tonBalance = 0;
+        let walletConnected = false;
+
+        // Инициализация Telegram Web App
+        window.Telegram.WebApp.ready();
+        window.Telegram.WebApp.expand();
+
+        // Функция просмотра рекламы через AdsGram
+        async function watchAd() {
+            try {
+                const result = await AdController.show();
+                // Если реклама просмотрена до конца (для Rewarded формата)
+                if (result === 'reward') {
+                    points += 10;
+                    updateUI();
+                    window.Telegram.WebApp.showAlert('Вы получили 10 очков за просмотр рекламы!');
+                } else if (result === 'skip' || result === 'close') {
+                    window.Telegram.WebApp.showAlert('Реклама была пропущена или закрыта.');
+                }
+            } catch (error) {
+                console.error('Ошибка показа рекламы:', error);
+                window.Telegram.WebApp.showAlert('Не удалось показать рекламу.');
+            }
+        }
+
+        // Подключение кошелька
+        async function connectWallet() {
+            try {
+                await tonConnect.connect();
+                walletConnected = true;
+                document.getElementById('connectBtn').textContent = 'Кошелек подключен';
+                document.getElementById('connectBtn').disabled = true;
+                document.getElementById('exchangeBtn').disabled = false;
+                document.getElementById('withdrawBtn').disabled = false;
+                window.Telegram.WebApp.showAlert('Кошелек успешно подключен!');
+            } catch (e) {
+                window.Telegram.WebApp.showAlert('Ошибка подключения кошелька');
+                console.error(e);
+            }
+        }
+
+        // Обмен очков на TON (1 TON = 100 очков)
+        function exchangePoints() {
+            if (points >= 100) {
+                const tonToAdd = points / 100;
+                points = points % 100;
+                tonBalance += tonToAdd;
+                updateUI();
+                window.Telegram.WebApp.showAlert(`Вы обменяли очки на ${tonToAdd} TON!`);
+            } else {
+                window.Telegram.WebApp.showAlert('Недостаточно очков! Нужно минимум 100');
+            }
+        }
+
+        // Вывод TON
+        async function withdrawTON() {
+            if (!walletConnected) {
+                window.Telegram.WebApp.showAlert('Сначала подключите кошелек!');
+                return;
+            }
+            if (tonBalance > 0) {
+                try {
+                    const transaction = {
+                        validUntil: Math.floor(Date.now() / 1000) + 60,
+                        messages: [{
+                            address: tonConnect.account.address,
+                            amount: (tonBalance * 1e9).toString(), // TON в нанотонах
+                        }]
+                    };
+                    await tonConnect.sendTransaction(transaction);
+                    tonBalance = 0;
+                    updateUI();
+                    window.Telegram.WebApp.showAlert('TON успешно выведены!');
+                } catch (e) {
+                    window.Telegram.WebApp.showAlert('Ошибка вывода TON');
+                    console.error(e);
+                }
+            } else {
+                window.Telegram.WebApp.showAlert('Недостаточно TON для вывода!');
+            }
+        }
+
+        // Обновление интерфейса
+        function updateUI() {
+            document.getElementById('points').textContent = points;
+            document.getElementById('tonBalance').textContent = tonBalance.toFixed(2);
+        }
+    </script>
+</body>
+</html>
